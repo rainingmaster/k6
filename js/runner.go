@@ -737,7 +737,7 @@ func (u *VU) runFn(
 	}
 
 	startTime := time.Now()
-	u.loop.start(ctx, func() {
+	u.loop.start(func() error {
 		defer func() {
 			if r := recover(); r != nil {
 				gojaStack := u.Runtime.CaptureCallStack(20, nil)
@@ -754,6 +754,7 @@ func (u *VU) runFn(
 			}
 		}()
 		v, err = fn(goja.Undefined(), args...) // Actually run the JS script
+		return err
 	})
 	endTime := time.Now()
 	var exception *goja.Exception
