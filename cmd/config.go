@@ -37,6 +37,7 @@ import (
 	"go.k6.io/k6/errext/exitcodes"
 	"go.k6.io/k6/lib"
 	"go.k6.io/k6/lib/executor"
+	"go.k6.io/k6/lib/metrics"
 	"go.k6.io/k6/lib/types"
 	"go.k6.io/k6/stats"
 )
@@ -226,12 +227,18 @@ func applyDefault(conf Config) Config {
 	return conf
 }
 
-func deriveAndValidateConfig(conf Config, isExecutable func(string) bool) (result Config, err error) {
+func deriveAndValidateConfig(conf Config, registry *metrics.Registry, isExecutable func(string) bool) (result Config, err error) {
 	result = conf
 	result.Options, err = executor.DeriveScenariosFromShortcuts(conf.Options)
 	if err == nil {
 		err = validateConfig(result, isExecutable)
 	}
+
+	err = validateConfigsThresholds(conf, registry)
+	if err != nil {
+		return result, err
+	}
+
 	return result, errext.WithExitCodeIfNone(err, exitcodes.InvalidConfig)
 }
 
@@ -265,5 +272,85 @@ func validateScenarioConfig(conf lib.ExecutorConfig, isExecutable func(string) b
 	if !isExecutable(execFn) {
 		return fmt.Errorf("executor %s: function '%s' not found in exports", conf.GetName(), execFn)
 	}
+	return nil
+}
+
+// FIXME: doesn't need to go in the engine, can be done in Run?
+// FIXME: move me to the stats package?
+// FIXME: when a threshold expression is invalid, the error message could be nicer
+func validateConfigsThresholds(conf Config, registry *metrics.Registry) error {
+	// Focusing on builtin metric for now. For each threshold,
+	// found in the options, do we have a matching builtin metric?
+	for name, thresholds := range conf.Options.Thresholds {
+		// The defined threshold applies to a non-existing metrics
+		if !registry.Has(name) {
+			return fmt.Errorf("invalid threshold defined on %s; reason: no metric named %s found", name, name)
+		}
+
+		// Get the metric from the registry
+		metric := registry.Get(name)
+
+		// TODO: factorize the looping and looking over the the thresholds.Thresholds somehow
+		switch metric.Type {
+		case stats.Counter:
+			supportedMethods := []string{stats.TokenCount, stats.TokenRate}
+
+			for _, threshold := range thresholds.Thresholds {
+				if !lib.Contains(supportedMethods, threshold.Parsed.AggregationMethod) {
+					// if threshold.Parsed.AggregationMethod != stats.TokenCount &&
+					// 	threshold.Parsed.AggregationMethod != stats.TokenRate {
+					return fmt.Errorf(
+						"invalid threshold expression %s: '%s'; "+
+							"reason: invalid aggregation method '%s' applied to the '%s' metric. "+
+							"%s is a metric of type Counter, did you mean to use the any of the "+
+							"'count' or 'rate' aggregation methods instead?",
+						name, threshold.Source, threshold.Parsed.AggregationMethod, name, name,
+					)
+				}
+			}
+		case stats.Gauge:
+			for _, threshold := range thresholds.Thresholds {
+				if threshold.Parsed.AggregationMethod != stats.TokenValue {
+					return fmt.Errorf(
+						"invalid threshold expression %s: '%s'; "+
+							"reason: invalid aggregation method '%s' applied to the '%s' metric. "+
+							"%s is a metric of type Gauge, did you mean to use the 'value' aggregation method instead?",
+						name, threshold.Source, threshold.Parsed.AggregationMethod, name, name,
+					)
+				}
+			}
+		case stats.Rate:
+			for _, threshold := range thresholds.Thresholds {
+				if threshold.Parsed.AggregationMethod != stats.TokenRate {
+					return fmt.Errorf(
+						"invalid threshold expression %s: '%s'; "+
+							"reason: invalid aggregation method '%s' applied to the '%s' metric. "+
+							"%s is a metric of type Rate, did you mean to use the 'rate' aggregation method instead?",
+						name, threshold.Source, threshold.Parsed.AggregationMethod, name, name,
+					)
+				}
+			}
+		case stats.Trend:
+			supportedMethods := []string{
+				stats.TokenAvg,
+				stats.TokenMin,
+				stats.TokenMax,
+				stats.TokenMed,
+				stats.TokenPercentile,
+			}
+			for _, threshold := range thresholds.Thresholds {
+				if !lib.Contains(supportedMethods, threshold.Parsed.AggregationMethod) {
+					return fmt.Errorf(
+						"invalid threshold expression %s: '%s'; "+
+							"reason: invalid aggregation method '%s' applied to the '%s' metric. "+
+							"%s is a metric of type Trend, did you mean to use any of the "+
+							"'avg', 'min', 'med', or 'p(N)' aggregation methods instead?",
+						name, threshold.Source, threshold.Parsed.AggregationMethod, name, name,
+					)
+				}
+			}
+		}
+	}
+
 	return nil
 }

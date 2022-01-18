@@ -128,7 +128,7 @@ a commandline interface for interacting with it.`,
 				return err
 			}
 
-			conf, err = deriveAndValidateConfig(conf, initRunner.IsExecutable)
+			conf, err = deriveAndValidateConfig(conf, registry, initRunner.IsExecutable)
 			if err != nil {
 				return err
 			}
@@ -189,7 +189,7 @@ a commandline interface for interacting with it.`,
 
 			// Create the engine.
 			initBar.Modify(pb.WithConstProgress(0, "Init engine"))
-			engine, err := core.NewEngine(execScheduler, conf.Options, runtimeOptions, outputs, logger, builtinMetrics)
+			engine, err := core.NewEngine(execScheduler, conf.Options, runtimeOptions, outputs, logger, builtinMetrics, registry)
 			if err != nil {
 				return err
 			}

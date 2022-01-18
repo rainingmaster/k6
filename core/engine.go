@@ -82,7 +82,7 @@ type Engine struct {
 // NewEngine instantiates a new Engine, without doing any heavy initialization.
 func NewEngine(
 	ex lib.ExecutionScheduler, opts lib.Options, rtOpts lib.RuntimeOptions, outputs []output.Output, logger *logrus.Logger,
-	builtinMetrics *metrics.BuiltinMetrics,
+	builtinMetrics *metrics.BuiltinMetrics, registry *metrics.Registry,
 ) (*Engine, error) {
 	if ex == nil {
 		return nil, errors.New("missing ExecutionScheduler instance")
@@ -103,6 +103,12 @@ func NewEngine(
 	}
 
 	e.thresholds = opts.Thresholds
+	// var err error
+	// e.thresholds, err = e.validateThresholds(opts, registry)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
 	e.submetrics = make(map[string][]*stats.Submetric)
 	for name := range e.thresholds {
 		if !strings.Contains(name, "{") {

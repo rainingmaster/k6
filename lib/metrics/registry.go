@@ -85,3 +85,12 @@ func (r *Registry) MustNewMetric(name string, typ stats.MetricType, t ...stats.V
 	}
 	return m
 }
+
+func (r *Registry) Get(name string) *stats.Metric {
+	return r.metrics[name]
+}
+
+func (r *Registry) Has(name string) bool {
+	_, ok := r.metrics[name]
+	return ok
+}
